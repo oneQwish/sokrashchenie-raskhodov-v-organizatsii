@@ -1,0 +1,703 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Defs_VitaStore" targetNamespace="http://vitastore.example/bpmn" exporter="Camunda Modeler" exporterVersion="5.0.0">
+<bpmn:collaboration id="Collab_Onboarding">
+<bpmn:participant id="P_HQ" name="HQ VitaStore" processRef="Proc_HQ" />
+<bpmn:participant id="P_LOG" name="Логистика (SaaS, курьерская служба)" processRef="Proc_LOG" />
+<bpmn:participant id="P_ST" name="Магазин (новая точка)" processRef="Proc_ST" />
+<bpmn:participant id="P_BANK" name="Банк-эквайер" />
+<bpmn:participant id="P_CL" name="Облачная платформа VitaStore" processRef="Proc_CL" />
+<bpmn:participant id="P_AI" name="AI-сервис сопоставления номенклатуры" processRef="Proc_AI" />
+<bpmn:participant id="P_SAP" name="SAP ERP" processRef="Proc_SAP" />
+<bpmn:messageFlow id="MF_reg_cl" name="Карточка магазина" sourceRef="ma_register" targetRef="cl_start" />
+<bpmn:messageFlow id="MF_reg_lg" name="Заявка на комплект" sourceRef="ma_register" targetRef="lg_start" />
+<bpmn:messageFlow id="MF_reg_st" name="Инструкция по выгрузке" sourceRef="ma_register" targetRef="st_start" />
+<bpmn:messageFlow id="MF_lg_st" name="Комплект доставлен" sourceRef="lg_end" targetRef="st_kit" />
+<bpmn:messageFlow id="MF_dump" name="Выгрузка старой базы" sourceRef="st_dump" targetRef="cl_dump_wait" />
+<bpmn:messageFlow id="MF_scan" name="Скан-лист инвентаризации" sourceRef="st_send" targetRef="cl_inv_wait" />
+<bpmn:messageFlow id="MF_act" name="Запрос активации (модели терминалов)" sourceRef="tm_req" targetRef="cl_dev_wait" />
+<bpmn:messageFlow id="MF_cfg" name="Конфигурация и драйверы HAL" sourceRef="cl_dev_send" targetRef="tm_wait" />
+<bpmn:messageFlow id="MF_bank1" name="Тестовая авторизация" sourceRef="tm_test" targetRef="P_BANK" />
+<bpmn:messageFlow id="MF_bank2" name="Ответ банка" sourceRef="P_BANK" targetRef="tm_test" />
+<bpmn:messageFlow id="MF_ai1" name="Ненайденные позиции" sourceRef="cl_ai_send" targetRef="ai_start" />
+<bpmn:messageFlow id="MF_ai2" name="Кандидаты SKU + уверенность" sourceRef="ai_end" targetRef="cl_ai_wait" />
+<bpmn:messageFlow id="MF_hq1" name="Позиции на проверку" sourceRef="cl_hq_send" targetRef="hq_start" />
+<bpmn:messageFlow id="MF_hq2" name="Позиции разобраны" sourceRef="hq_end" targetRef="cl_hq_wait" />
+<bpmn:messageFlow id="MF_sap1" name="Ассортиментная матрица и остатки" sourceRef="cl_sap_send" targetRef="sap_start" />
+<bpmn:messageFlow id="MF_sap2" name="Данные загружены" sourceRef="sap_end" targetRef="cl_sap_wait" />
+<bpmn:messageFlow id="MF_ready" name="Каталог опубликован, устройства активны" sourceRef="cl_end" targetRef="st_wait" />
+<bpmn:messageFlow id="MF_open" name="Магазин открыт" sourceRef="st_end" targetRef="ma_wait" />
+</bpmn:collaboration>
+<bpmn:dataStore id="Store_cat" name="Эталонный каталог" />
+<bpmn:dataStore id="Store_map" name="Справочник сопоставлений" />
+<bpmn:process id="Proc_HQ" isExecutable="false">
+<bpmn:laneSet id="LS_Proc_HQ">
+<bpmn:lane id="L_MA" name="Департамент M&amp;A">
+<bpmn:flowNodeRef>ma_start</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>ma_register</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>ma_wait</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>ma_kpi</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>ma_end</bpmn:flowNodeRef>
+</bpmn:lane>
+<bpmn:lane id="L_TOV" name="Товаровед (коммерческий департамент)">
+<bpmn:flowNodeRef>hq_start</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>hq_sub</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>hq_check</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>hq_end</bpmn:flowNodeRef>
+</bpmn:lane>
+</bpmn:laneSet>
+<bpmn:startEvent id="ma_start" name="Сделка по магазину закрыта">
+<bpmn:outgoing>F_ma_start_ma_register</bpmn:outgoing>
+</bpmn:startEvent>
+<bpmn:task id="ma_register" name="Зарегистрировать магазин и запустить онбординг">
+<bpmn:incoming>F_ma_start_ma_register</bpmn:incoming>
+<bpmn:outgoing>F_ma_register_ma_wait</bpmn:outgoing>
+</bpmn:task>
+<bpmn:intermediateCatchEvent id="ma_wait" name="Магазин открыт">
+<bpmn:incoming>F_ma_register_ma_wait</bpmn:incoming>
+<bpmn:outgoing>F_ma_wait_ma_kpi</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_ma_wait" />
+</bpmn:intermediateCatchEvent>
+<bpmn:task id="ma_kpi" name="Зафиксировать срок онбординга (KPI: не более 5 дней)">
+<bpmn:incoming>F_ma_wait_ma_kpi</bpmn:incoming>
+<bpmn:outgoing>F_ma_kpi_ma_end</bpmn:outgoing>
+</bpmn:task>
+<bpmn:endEvent id="ma_end" name="Онбординг завершён">
+<bpmn:incoming>F_ma_kpi_ma_end</bpmn:incoming>
+</bpmn:endEvent>
+<bpmn:startEvent id="hq_start" name="Получены позиции на проверку">
+<bpmn:outgoing>F_hq_start_hq_sub</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_hq_start" />
+</bpmn:startEvent>
+<bpmn:subProcess id="hq_sub" name="Проверить каждую позицию">
+<bpmn:incoming>F_hq_start_hq_sub</bpmn:incoming>
+<bpmn:outgoing>F_hq_sub_hq_check</bpmn:outgoing>
+<bpmn:multiInstanceLoopCharacteristics />
+<bpmn:startEvent id="sp_start" name="Позиция из списка">
+<bpmn:outgoing>F_sp_start_sp_gw</bpmn:outgoing>
+</bpmn:startEvent>
+<bpmn:exclusiveGateway id="sp_gw" name="Решение по позиции">
+<bpmn:incoming>F_sp_start_sp_gw</bpmn:incoming>
+<bpmn:outgoing>F_sp_gw_sp_ok</bpmn:outgoing>
+<bpmn:outgoing>F_sp_gw_sp_link</bpmn:outgoing>
+<bpmn:outgoing>F_sp_gw_sp_new</bpmn:outgoing>
+</bpmn:exclusiveGateway>
+<bpmn:task id="sp_ok" name="Подтвердить кандидата AI">
+<bpmn:incoming>F_sp_gw_sp_ok</bpmn:incoming>
+<bpmn:outgoing>F_sp_ok_sp_merge</bpmn:outgoing>
+</bpmn:task>
+<bpmn:task id="sp_link" name="Выбрать другой SKU из каталога (фасовка, внутренний код)">
+<bpmn:incoming>F_sp_gw_sp_link</bpmn:incoming>
+<bpmn:outgoing>F_sp_link_sp_merge</bpmn:outgoing>
+</bpmn:task>
+<bpmn:task id="sp_new" name="Завести новый SKU (категория, цена, поставщик)">
+<bpmn:incoming>F_sp_gw_sp_new</bpmn:incoming>
+<bpmn:outgoing>F_sp_new_sp_merge</bpmn:outgoing>
+</bpmn:task>
+<bpmn:exclusiveGateway id="sp_merge" name="">
+<bpmn:incoming>F_sp_ok_sp_merge</bpmn:incoming>
+<bpmn:incoming>F_sp_link_sp_merge</bpmn:incoming>
+<bpmn:incoming>F_sp_new_sp_merge</bpmn:incoming>
+<bpmn:outgoing>F_sp_merge_sp_end</bpmn:outgoing>
+</bpmn:exclusiveGateway>
+<bpmn:endEvent id="sp_end" name="Позиция проверена">
+<bpmn:incoming>F_sp_merge_sp_end</bpmn:incoming>
+</bpmn:endEvent>
+<bpmn:sequenceFlow id="F_sp_start_sp_gw" sourceRef="sp_start" targetRef="sp_gw" />
+<bpmn:sequenceFlow id="F_sp_gw_sp_ok" name="Кандидат верный" sourceRef="sp_gw" targetRef="sp_ok" />
+<bpmn:sequenceFlow id="F_sp_gw_sp_link" name="Другой SKU" sourceRef="sp_gw" targetRef="sp_link" />
+<bpmn:sequenceFlow id="F_sp_gw_sp_new" name="Товара нет в каталоге" sourceRef="sp_gw" targetRef="sp_new" />
+<bpmn:sequenceFlow id="F_sp_ok_sp_merge" sourceRef="sp_ok" targetRef="sp_merge" />
+<bpmn:sequenceFlow id="F_sp_link_sp_merge" sourceRef="sp_link" targetRef="sp_merge" />
+<bpmn:sequenceFlow id="F_sp_new_sp_merge" sourceRef="sp_new" targetRef="sp_merge" />
+<bpmn:sequenceFlow id="F_sp_merge_sp_end" sourceRef="sp_merge" targetRef="sp_end" />
+</bpmn:subProcess>
+<bpmn:task id="hq_check" name="Проверить цены новых SKU (второй сотрудник)">
+<bpmn:incoming>F_hq_sub_hq_check</bpmn:incoming>
+<bpmn:outgoing>F_hq_check_hq_end</bpmn:outgoing>
+</bpmn:task>
+<bpmn:endEvent id="hq_end" name="Позиции разобраны">
+<bpmn:incoming>F_hq_check_hq_end</bpmn:incoming>
+<bpmn:messageEventDefinition id="MED_hq_end" />
+</bpmn:endEvent>
+<bpmn:sequenceFlow id="F_ma_start_ma_register" sourceRef="ma_start" targetRef="ma_register" />
+<bpmn:sequenceFlow id="F_ma_register_ma_wait" sourceRef="ma_register" targetRef="ma_wait" />
+<bpmn:sequenceFlow id="F_ma_wait_ma_kpi" sourceRef="ma_wait" targetRef="ma_kpi" />
+<bpmn:sequenceFlow id="F_ma_kpi_ma_end" sourceRef="ma_kpi" targetRef="ma_end" />
+<bpmn:sequenceFlow id="F_hq_start_hq_sub" sourceRef="hq_start" targetRef="hq_sub" />
+<bpmn:sequenceFlow id="F_hq_sub_hq_check" sourceRef="hq_sub" targetRef="hq_check" />
+<bpmn:sequenceFlow id="F_hq_check_hq_end" sourceRef="hq_check" targetRef="hq_end" />
+<bpmn:textAnnotation id="A_time"><bpmn:text>План на 5 дней. День 1: выгрузка старой базы, автоматическая сверка по штрихкоду и AI; доставка комплекта. День 2: подготовка склада, подключение и активация касс. День 3: инвентаризация на ТСД. Дни 3–4: товаровед проверяет позиции с уверенностью ниже 95% и выборку. Дни 4–5: загрузка в SAP, публикация на кассы, пробные продажи, открытие.</bpmn:text></bpmn:textAnnotation>
+</bpmn:process>
+<bpmn:process id="Proc_LOG" isExecutable="false">
+<bpmn:startEvent id="lg_start" name="Заявка на комплект">
+<bpmn:outgoing>F_lg_start_lg_task</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_lg_start" />
+</bpmn:startEvent>
+<bpmn:task id="lg_task" name="Доставить смарт-терминалы, роутер и комплект ТСД">
+<bpmn:incoming>F_lg_start_lg_task</bpmn:incoming>
+<bpmn:outgoing>F_lg_task_lg_end</bpmn:outgoing>
+</bpmn:task>
+<bpmn:endEvent id="lg_end" name="Комплект доставлен">
+<bpmn:incoming>F_lg_task_lg_end</bpmn:incoming>
+<bpmn:messageEventDefinition id="MED_lg_end" />
+</bpmn:endEvent>
+<bpmn:sequenceFlow id="F_lg_start_lg_task" sourceRef="lg_start" targetRef="lg_task" />
+<bpmn:sequenceFlow id="F_lg_task_lg_end" sourceRef="lg_task" targetRef="lg_end" />
+<bpmn:textAnnotation id="A_tsd"><bpmn:text>Комплект ТСД многоразовый: после инвентаризации курьер забирает его и везёт в следующий магазин.</bpmn:text></bpmn:textAnnotation>
+</bpmn:process>
+<bpmn:process id="Proc_ST" isExecutable="false">
+<bpmn:laneSet id="LS_Proc_ST">
+<bpmn:lane id="L_STAFF" name="Сотрудники магазина">
+<bpmn:flowNodeRef>st_start</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_dump</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_kit</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_split</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_prep</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_scan</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_send</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_connect</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_join</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_wait</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_merge</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_pilot</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_gw</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_fix</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_open</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>st_end</bpmn:flowNodeRef>
+</bpmn:lane>
+<bpmn:lane id="L_TERM" name="Смарт-терминал (Cloud POS + Edge HAL)">
+<bpmn:flowNodeRef>tm_req</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>tm_wait</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>tm_test</bpmn:flowNodeRef>
+</bpmn:lane>
+</bpmn:laneSet>
+<bpmn:startEvent id="st_start" name="Инструкция по онбордингу получена">
+<bpmn:outgoing>F_st_start_st_dump</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_st_start" />
+</bpmn:startEvent>
+<bpmn:sendTask id="st_dump" name="Выгрузить базу товаров из старой кассы и отправить в сервис онбординга">
+<bpmn:incoming>F_st_start_st_dump</bpmn:incoming>
+<bpmn:outgoing>F_st_dump_st_kit</bpmn:outgoing>
+</bpmn:sendTask>
+<bpmn:intermediateCatchEvent id="st_kit" name="Комплект получен">
+<bpmn:incoming>F_st_dump_st_kit</bpmn:incoming>
+<bpmn:outgoing>F_st_kit_st_split</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_st_kit" />
+</bpmn:intermediateCatchEvent>
+<bpmn:parallelGateway id="st_split" name="">
+<bpmn:incoming>F_st_kit_st_split</bpmn:incoming>
+<bpmn:outgoing>F_st_split_st_prep</bpmn:outgoing>
+<bpmn:outgoing>F_st_split_st_connect</bpmn:outgoing>
+</bpmn:parallelGateway>
+<bpmn:task id="st_prep" name="Подготовить склад к инвентаризации">
+<bpmn:incoming>F_st_split_st_prep</bpmn:incoming>
+<bpmn:outgoing>F_st_prep_st_scan</bpmn:outgoing>
+</bpmn:task>
+<bpmn:task id="st_scan" name="Провести инвентаризацию на ТСД">
+<bpmn:incoming>F_st_prep_st_scan</bpmn:incoming>
+<bpmn:outgoing>F_st_scan_st_send</bpmn:outgoing>
+</bpmn:task>
+<bpmn:intermediateThrowEvent id="st_send" name="Скан-лист отправлен">
+<bpmn:incoming>F_st_scan_st_send</bpmn:incoming>
+<bpmn:outgoing>F_st_send_st_join</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_st_send" />
+</bpmn:intermediateThrowEvent>
+<bpmn:task id="st_connect" name="Подключить смарт-терминалы и банковские терминалы">
+<bpmn:incoming>F_st_split_st_connect</bpmn:incoming>
+<bpmn:outgoing>F_st_connect_tm_req</bpmn:outgoing>
+</bpmn:task>
+<bpmn:parallelGateway id="st_join" name="">
+<bpmn:incoming>F_st_send_st_join</bpmn:incoming>
+<bpmn:incoming>F_tm_test_st_join</bpmn:incoming>
+<bpmn:outgoing>F_st_join_st_wait</bpmn:outgoing>
+</bpmn:parallelGateway>
+<bpmn:intermediateCatchEvent id="st_wait" name="Магазин готов к пробным продажам">
+<bpmn:incoming>F_st_join_st_wait</bpmn:incoming>
+<bpmn:outgoing>F_st_wait_st_merge</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_st_wait" />
+</bpmn:intermediateCatchEvent>
+<bpmn:exclusiveGateway id="st_merge" name="">
+<bpmn:incoming>F_st_wait_st_merge</bpmn:incoming>
+<bpmn:incoming>F_st_fix_st_merge</bpmn:incoming>
+<bpmn:outgoing>F_st_merge_st_pilot</bpmn:outgoing>
+</bpmn:exclusiveGateway>
+<bpmn:task id="st_pilot" name="Пробные продажи и выборочная сверка цен и ценников">
+<bpmn:incoming>F_st_merge_st_pilot</bpmn:incoming>
+<bpmn:outgoing>F_st_pilot_st_gw</bpmn:outgoing>
+</bpmn:task>
+<bpmn:exclusiveGateway id="st_gw" name="Расхождения есть?">
+<bpmn:incoming>F_st_pilot_st_gw</bpmn:incoming>
+<bpmn:outgoing>F_st_gw_st_open</bpmn:outgoing>
+<bpmn:outgoing>F_st_gw_st_fix</bpmn:outgoing>
+</bpmn:exclusiveGateway>
+<bpmn:task id="st_fix" name="Исправить расхождения вместе с товароведом">
+<bpmn:incoming>F_st_gw_st_fix</bpmn:incoming>
+<bpmn:outgoing>F_st_fix_st_merge</bpmn:outgoing>
+</bpmn:task>
+<bpmn:task id="st_open" name="Открыть магазин под брендом VitaStore">
+<bpmn:incoming>F_st_gw_st_open</bpmn:incoming>
+<bpmn:outgoing>F_st_open_st_end</bpmn:outgoing>
+</bpmn:task>
+<bpmn:endEvent id="st_end" name="Магазин открыт">
+<bpmn:incoming>F_st_open_st_end</bpmn:incoming>
+<bpmn:messageEventDefinition id="MED_st_end" />
+</bpmn:endEvent>
+<bpmn:sendTask id="tm_req" name="Определить модели банковских терминалов и запросить активацию">
+<bpmn:incoming>F_st_connect_tm_req</bpmn:incoming>
+<bpmn:outgoing>F_tm_req_tm_wait</bpmn:outgoing>
+</bpmn:sendTask>
+<bpmn:intermediateCatchEvent id="tm_wait" name="Конфигурация и драйверы HAL получены">
+<bpmn:incoming>F_tm_req_tm_wait</bpmn:incoming>
+<bpmn:outgoing>F_tm_wait_tm_test</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_tm_wait" />
+</bpmn:intermediateCatchEvent>
+<bpmn:task id="tm_test" name="Тестовая оплата картой через HAL">
+<bpmn:incoming>F_tm_wait_tm_test</bpmn:incoming>
+<bpmn:outgoing>F_tm_test_st_join</bpmn:outgoing>
+</bpmn:task>
+<bpmn:sequenceFlow id="F_st_start_st_dump" sourceRef="st_start" targetRef="st_dump" />
+<bpmn:sequenceFlow id="F_st_dump_st_kit" sourceRef="st_dump" targetRef="st_kit" />
+<bpmn:sequenceFlow id="F_st_kit_st_split" sourceRef="st_kit" targetRef="st_split" />
+<bpmn:sequenceFlow id="F_st_split_st_prep" sourceRef="st_split" targetRef="st_prep" />
+<bpmn:sequenceFlow id="F_st_split_st_connect" sourceRef="st_split" targetRef="st_connect" />
+<bpmn:sequenceFlow id="F_st_prep_st_scan" sourceRef="st_prep" targetRef="st_scan" />
+<bpmn:sequenceFlow id="F_st_scan_st_send" sourceRef="st_scan" targetRef="st_send" />
+<bpmn:sequenceFlow id="F_st_send_st_join" sourceRef="st_send" targetRef="st_join" />
+<bpmn:sequenceFlow id="F_st_connect_tm_req" sourceRef="st_connect" targetRef="tm_req" />
+<bpmn:sequenceFlow id="F_tm_req_tm_wait" sourceRef="tm_req" targetRef="tm_wait" />
+<bpmn:sequenceFlow id="F_tm_wait_tm_test" sourceRef="tm_wait" targetRef="tm_test" />
+<bpmn:sequenceFlow id="F_tm_test_st_join" sourceRef="tm_test" targetRef="st_join" />
+<bpmn:sequenceFlow id="F_st_join_st_wait" sourceRef="st_join" targetRef="st_wait" />
+<bpmn:sequenceFlow id="F_st_wait_st_merge" sourceRef="st_wait" targetRef="st_merge" />
+<bpmn:sequenceFlow id="F_st_merge_st_pilot" sourceRef="st_merge" targetRef="st_pilot" />
+<bpmn:sequenceFlow id="F_st_pilot_st_gw" sourceRef="st_pilot" targetRef="st_gw" />
+<bpmn:sequenceFlow id="F_st_gw_st_open" name="Нет" sourceRef="st_gw" targetRef="st_open" />
+<bpmn:sequenceFlow id="F_st_gw_st_fix" name="Да" sourceRef="st_gw" targetRef="st_fix" />
+<bpmn:sequenceFlow id="F_st_fix_st_merge" sourceRef="st_fix" targetRef="st_merge" />
+<bpmn:sequenceFlow id="F_st_open_st_end" sourceRef="st_open" targetRef="st_end" />
+<bpmn:textAnnotation id="A_dump"><bpmn:text>Выгрузка — штатная функция старой кассы. Сотрудник делает её по инструкции, при необходимости с удалённой поддержкой. Выезд инженера не нужен.</bpmn:text></bpmn:textAnnotation>
+<bpmn:association id="As_A_dump" sourceRef="st_dump" targetRef="A_dump" />
+<bpmn:textAnnotation id="A_scan"><bpmn:text>Инвентаризация при приёме магазина проводится в любом случае: она даёт фактические остатки. Сопоставление номенклатуры от неё не зависит и начинается раньше, по выгрузке. Короб в заводской упаковке — скан штрихкода короба.</bpmn:text></bpmn:textAnnotation>
+<bpmn:association id="As_A_scan" sourceRef="st_scan" targetRef="A_scan" />
+</bpmn:process>
+<bpmn:process id="Proc_CL" isExecutable="false">
+<bpmn:laneSet id="LS_Proc_CL">
+<bpmn:lane id="L_DEV" name="Управление устройствами (профили HAL)">
+<bpmn:flowNodeRef>cl_dev_wait</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_dev_act</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_dev_send</bpmn:flowNodeRef>
+</bpmn:lane>
+<bpmn:lane id="L_ONB" name="Сервис онбординга">
+<bpmn:flowNodeRef>cl_start</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_profile</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_split1</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_split2</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_dump_wait</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_match</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_gw1</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_ai_send</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_ai_wait</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_m1</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_inv_wait</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_join1</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_route</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_hq_send</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_hq_wait</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_learn</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_sap_send</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_sap_wait</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_join_f</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_publish</bpmn:flowNodeRef>
+<bpmn:flowNodeRef>cl_end</bpmn:flowNodeRef>
+</bpmn:lane>
+</bpmn:laneSet>
+<bpmn:intermediateCatchEvent id="cl_dev_wait" name="Запрос активации получен">
+<bpmn:incoming>F_cl_split1_cl_dev_wait</bpmn:incoming>
+<bpmn:outgoing>F_cl_dev_wait_cl_dev_act</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_cl_dev_wait" />
+</bpmn:intermediateCatchEvent>
+<bpmn:task id="cl_dev_act" name="Активировать устройства, назначить драйверы HAL">
+<bpmn:incoming>F_cl_dev_wait_cl_dev_act</bpmn:incoming>
+<bpmn:outgoing>F_cl_dev_act_cl_dev_send</bpmn:outgoing>
+</bpmn:task>
+<bpmn:intermediateThrowEvent id="cl_dev_send" name="Конфигурация отправлена">
+<bpmn:incoming>F_cl_dev_act_cl_dev_send</bpmn:incoming>
+<bpmn:outgoing>F_cl_dev_send_cl_join_f</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_cl_dev_send" />
+</bpmn:intermediateThrowEvent>
+<bpmn:startEvent id="cl_start" name="Карточка магазина получена">
+<bpmn:outgoing>F_cl_start_cl_profile</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_cl_start" />
+</bpmn:startEvent>
+<bpmn:task id="cl_profile" name="Подготовить профиль магазина: матрица, цены, устройства">
+<bpmn:incoming>F_cl_start_cl_profile</bpmn:incoming>
+<bpmn:outgoing>F_cl_profile_cl_split1</bpmn:outgoing>
+</bpmn:task>
+<bpmn:parallelGateway id="cl_split1" name="">
+<bpmn:incoming>F_cl_profile_cl_split1</bpmn:incoming>
+<bpmn:outgoing>F_cl_split1_cl_dev_wait</bpmn:outgoing>
+<bpmn:outgoing>F_cl_split1_cl_split2</bpmn:outgoing>
+</bpmn:parallelGateway>
+<bpmn:parallelGateway id="cl_split2" name="">
+<bpmn:incoming>F_cl_split1_cl_split2</bpmn:incoming>
+<bpmn:outgoing>F_cl_split2_cl_inv_wait</bpmn:outgoing>
+<bpmn:outgoing>F_cl_split2_cl_dump_wait</bpmn:outgoing>
+</bpmn:parallelGateway>
+<bpmn:intermediateCatchEvent id="cl_dump_wait" name="Выгрузка старой базы получена">
+<bpmn:incoming>F_cl_split2_cl_dump_wait</bpmn:incoming>
+<bpmn:outgoing>F_cl_dump_wait_cl_match</bpmn:outgoing>
+<bpmn:dataOutputAssociation id="DOA_dump"><bpmn:targetRef>DO_dump</bpmn:targetRef></bpmn:dataOutputAssociation>
+<bpmn:messageEventDefinition id="MED_cl_dump_wait" />
+</bpmn:intermediateCatchEvent>
+<bpmn:task id="cl_match" name="Сверить штрихкод каждой позиции с эталонным каталогом">
+<bpmn:incoming>F_cl_dump_wait_cl_match</bpmn:incoming>
+<bpmn:outgoing>F_cl_match_cl_gw1</bpmn:outgoing>
+<bpmn:property id="Prop_cl_match" name="__targetRef_placeholder" />
+<bpmn:dataInputAssociation id="DIA_dump"><bpmn:sourceRef>DO_dump</bpmn:sourceRef><bpmn:targetRef>Prop_cl_match</bpmn:targetRef></bpmn:dataInputAssociation>
+<bpmn:dataInputAssociation id="DIA_cat"><bpmn:sourceRef>DS_cat</bpmn:sourceRef><bpmn:targetRef>Prop_cl_match</bpmn:targetRef></bpmn:dataInputAssociation>
+<bpmn:multiInstanceLoopCharacteristics />
+</bpmn:task>
+<bpmn:exclusiveGateway id="cl_gw1" name="Все позиции найдены по штрихкоду?">
+<bpmn:incoming>F_cl_match_cl_gw1</bpmn:incoming>
+<bpmn:outgoing>F_cl_gw1_cl_m1</bpmn:outgoing>
+<bpmn:outgoing>F_cl_gw1_cl_ai_send</bpmn:outgoing>
+</bpmn:exclusiveGateway>
+<bpmn:sendTask id="cl_ai_send" name="Передать ненайденные позиции в AI-сервис">
+<bpmn:incoming>F_cl_gw1_cl_ai_send</bpmn:incoming>
+<bpmn:outgoing>F_cl_ai_send_cl_ai_wait</bpmn:outgoing>
+</bpmn:sendTask>
+<bpmn:intermediateCatchEvent id="cl_ai_wait" name="Кандидаты SKU и уверенность получены">
+<bpmn:incoming>F_cl_ai_send_cl_ai_wait</bpmn:incoming>
+<bpmn:outgoing>F_cl_ai_wait_cl_m1</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_cl_ai_wait" />
+</bpmn:intermediateCatchEvent>
+<bpmn:exclusiveGateway id="cl_m1" name="">
+<bpmn:incoming>F_cl_gw1_cl_m1</bpmn:incoming>
+<bpmn:incoming>F_cl_ai_wait_cl_m1</bpmn:incoming>
+<bpmn:outgoing>F_cl_m1_cl_join1</bpmn:outgoing>
+</bpmn:exclusiveGateway>
+<bpmn:intermediateCatchEvent id="cl_inv_wait" name="Скан-лист инвентаризации получен">
+<bpmn:incoming>F_cl_split2_cl_inv_wait</bpmn:incoming>
+<bpmn:outgoing>F_cl_inv_wait_cl_join1</bpmn:outgoing>
+<bpmn:dataOutputAssociation id="DOA_scan"><bpmn:targetRef>DO_scan</bpmn:targetRef></bpmn:dataOutputAssociation>
+<bpmn:messageEventDefinition id="MED_cl_inv_wait" />
+</bpmn:intermediateCatchEvent>
+<bpmn:parallelGateway id="cl_join1" name="">
+<bpmn:incoming>F_cl_m1_cl_join1</bpmn:incoming>
+<bpmn:incoming>F_cl_inv_wait_cl_join1</bpmn:incoming>
+<bpmn:outgoing>F_cl_join1_cl_route</bpmn:outgoing>
+</bpmn:parallelGateway>
+<bpmn:task id="cl_route" name="Свести остатки по SKU и отобрать позиции на проверку">
+<bpmn:incoming>F_cl_join1_cl_route</bpmn:incoming>
+<bpmn:outgoing>F_cl_route_cl_hq_send</bpmn:outgoing>
+<bpmn:property id="Prop_cl_route" name="__targetRef_placeholder" />
+<bpmn:dataInputAssociation id="DIA_scan"><bpmn:sourceRef>DO_scan</bpmn:sourceRef><bpmn:targetRef>Prop_cl_route</bpmn:targetRef></bpmn:dataInputAssociation>
+</bpmn:task>
+<bpmn:sendTask id="cl_hq_send" name="Передать позиции товароведу">
+<bpmn:incoming>F_cl_route_cl_hq_send</bpmn:incoming>
+<bpmn:outgoing>F_cl_hq_send_cl_hq_wait</bpmn:outgoing>
+</bpmn:sendTask>
+<bpmn:intermediateCatchEvent id="cl_hq_wait" name="Позиции разобраны">
+<bpmn:incoming>F_cl_hq_send_cl_hq_wait</bpmn:incoming>
+<bpmn:outgoing>F_cl_hq_wait_cl_learn</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_cl_hq_wait" />
+</bpmn:intermediateCatchEvent>
+<bpmn:task id="cl_learn" name="Сохранить подтверждённые сопоставления в справочник">
+<bpmn:incoming>F_cl_hq_wait_cl_learn</bpmn:incoming>
+<bpmn:outgoing>F_cl_learn_cl_sap_send</bpmn:outgoing>
+<bpmn:dataOutputAssociation id="DOA_map"><bpmn:targetRef>DS_map</bpmn:targetRef></bpmn:dataOutputAssociation>
+</bpmn:task>
+<bpmn:sendTask id="cl_sap_send" name="Передать ассортиментную матрицу и остатки в SAP ERP">
+<bpmn:incoming>F_cl_learn_cl_sap_send</bpmn:incoming>
+<bpmn:outgoing>F_cl_sap_send_cl_sap_wait</bpmn:outgoing>
+</bpmn:sendTask>
+<bpmn:intermediateCatchEvent id="cl_sap_wait" name="Данные магазина загружены">
+<bpmn:incoming>F_cl_sap_send_cl_sap_wait</bpmn:incoming>
+<bpmn:outgoing>F_cl_sap_wait_cl_join_f</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_cl_sap_wait" />
+</bpmn:intermediateCatchEvent>
+<bpmn:parallelGateway id="cl_join_f" name="">
+<bpmn:incoming>F_cl_dev_send_cl_join_f</bpmn:incoming>
+<bpmn:incoming>F_cl_sap_wait_cl_join_f</bpmn:incoming>
+<bpmn:outgoing>F_cl_join_f_cl_publish</bpmn:outgoing>
+</bpmn:parallelGateway>
+<bpmn:task id="cl_publish" name="Опубликовать каталог, цены и остатки на смарт-терминалы">
+<bpmn:incoming>F_cl_join_f_cl_publish</bpmn:incoming>
+<bpmn:outgoing>F_cl_publish_cl_end</bpmn:outgoing>
+</bpmn:task>
+<bpmn:endEvent id="cl_end" name="Магазин готов к пробным продажам">
+<bpmn:incoming>F_cl_publish_cl_end</bpmn:incoming>
+<bpmn:messageEventDefinition id="MED_cl_end" />
+</bpmn:endEvent>
+<bpmn:dataObject id="DO_dump_obj" />
+<bpmn:dataObjectReference id="DO_dump" name="Выгрузка старой базы (штрихкод, название)" dataObjectRef="DO_dump_obj" />
+<bpmn:dataStoreReference id="DS_cat" name="Эталонный каталог" dataStoreRef="Store_cat" />
+<bpmn:dataObject id="DO_scan_obj" />
+<bpmn:dataObjectReference id="DO_scan" name="Скан-лист (штрихкод + количество)" dataObjectRef="DO_scan_obj" />
+<bpmn:dataStoreReference id="DS_map" name="Справочник сопоставлений" dataStoreRef="Store_map" />
+<bpmn:sequenceFlow id="F_cl_dev_wait_cl_dev_act" sourceRef="cl_dev_wait" targetRef="cl_dev_act" />
+<bpmn:sequenceFlow id="F_cl_dev_act_cl_dev_send" sourceRef="cl_dev_act" targetRef="cl_dev_send" />
+<bpmn:sequenceFlow id="F_cl_dev_send_cl_join_f" sourceRef="cl_dev_send" targetRef="cl_join_f" />
+<bpmn:sequenceFlow id="F_cl_start_cl_profile" sourceRef="cl_start" targetRef="cl_profile" />
+<bpmn:sequenceFlow id="F_cl_profile_cl_split1" sourceRef="cl_profile" targetRef="cl_split1" />
+<bpmn:sequenceFlow id="F_cl_split1_cl_dev_wait" sourceRef="cl_split1" targetRef="cl_dev_wait" />
+<bpmn:sequenceFlow id="F_cl_split1_cl_split2" sourceRef="cl_split1" targetRef="cl_split2" />
+<bpmn:sequenceFlow id="F_cl_split2_cl_inv_wait" sourceRef="cl_split2" targetRef="cl_inv_wait" />
+<bpmn:sequenceFlow id="F_cl_split2_cl_dump_wait" sourceRef="cl_split2" targetRef="cl_dump_wait" />
+<bpmn:sequenceFlow id="F_cl_dump_wait_cl_match" sourceRef="cl_dump_wait" targetRef="cl_match" />
+<bpmn:sequenceFlow id="F_cl_match_cl_gw1" sourceRef="cl_match" targetRef="cl_gw1" />
+<bpmn:sequenceFlow id="F_cl_gw1_cl_m1" name="Да" sourceRef="cl_gw1" targetRef="cl_m1" />
+<bpmn:sequenceFlow id="F_cl_gw1_cl_ai_send" name="Нет" sourceRef="cl_gw1" targetRef="cl_ai_send" />
+<bpmn:sequenceFlow id="F_cl_ai_send_cl_ai_wait" sourceRef="cl_ai_send" targetRef="cl_ai_wait" />
+<bpmn:sequenceFlow id="F_cl_ai_wait_cl_m1" sourceRef="cl_ai_wait" targetRef="cl_m1" />
+<bpmn:sequenceFlow id="F_cl_m1_cl_join1" sourceRef="cl_m1" targetRef="cl_join1" />
+<bpmn:sequenceFlow id="F_cl_inv_wait_cl_join1" sourceRef="cl_inv_wait" targetRef="cl_join1" />
+<bpmn:sequenceFlow id="F_cl_join1_cl_route" sourceRef="cl_join1" targetRef="cl_route" />
+<bpmn:sequenceFlow id="F_cl_route_cl_hq_send" sourceRef="cl_route" targetRef="cl_hq_send" />
+<bpmn:sequenceFlow id="F_cl_hq_send_cl_hq_wait" sourceRef="cl_hq_send" targetRef="cl_hq_wait" />
+<bpmn:sequenceFlow id="F_cl_hq_wait_cl_learn" sourceRef="cl_hq_wait" targetRef="cl_learn" />
+<bpmn:sequenceFlow id="F_cl_learn_cl_sap_send" sourceRef="cl_learn" targetRef="cl_sap_send" />
+<bpmn:sequenceFlow id="F_cl_sap_send_cl_sap_wait" sourceRef="cl_sap_send" targetRef="cl_sap_wait" />
+<bpmn:sequenceFlow id="F_cl_sap_wait_cl_join_f" sourceRef="cl_sap_wait" targetRef="cl_join_f" />
+<bpmn:sequenceFlow id="F_cl_join_f_cl_publish" sourceRef="cl_join_f" targetRef="cl_publish" />
+<bpmn:sequenceFlow id="F_cl_publish_cl_end" sourceRef="cl_publish" targetRef="cl_end" />
+<bpmn:textAnnotation id="A_match"><bpmn:text>Шаг 1: штрихкод найден в эталонном каталоге — позиция сопоставляется сразу. Шаг 2: не найден — AI-сервис предлагает SKU по названию с оценкой уверенности. 95% и выше — принимается автоматически, ниже 95% — товароведу. Товаровед также проверяет случайные 5% автоматически принятых позиций.</bpmn:text></bpmn:textAnnotation>
+<bpmn:association id="As_A_match" sourceRef="cl_route" targetRef="A_match" />
+<bpmn:textAnnotation id="A_learn"><bpmn:text>Каждое решение товароведа сохраняется. Следующий магазин той же купленной сети сопоставляется точнее, и на проверку уходит меньше позиций.</bpmn:text></bpmn:textAnnotation>
+<bpmn:association id="As_A_learn" sourceRef="cl_learn" targetRef="A_learn" />
+</bpmn:process>
+<bpmn:process id="Proc_AI" isExecutable="false">
+<bpmn:startEvent id="ai_start" name="Ненайденные позиции получены">
+<bpmn:outgoing>F_ai_start_ai_task</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_ai_start" />
+</bpmn:startEvent>
+<bpmn:task id="ai_task" name="Подобрать SKU для каждой позиции и оценить уверенность">
+<bpmn:incoming>F_ai_start_ai_task</bpmn:incoming>
+<bpmn:outgoing>F_ai_task_ai_end</bpmn:outgoing>
+<bpmn:property id="Prop_ai_task" name="__targetRef_placeholder" />
+<bpmn:dataInputAssociation id="DIA_cat_ai"><bpmn:sourceRef>DS_cat_ai</bpmn:sourceRef><bpmn:targetRef>Prop_ai_task</bpmn:targetRef></bpmn:dataInputAssociation>
+<bpmn:dataInputAssociation id="DIA_map_ai"><bpmn:sourceRef>DS_map_ai</bpmn:sourceRef><bpmn:targetRef>Prop_ai_task</bpmn:targetRef></bpmn:dataInputAssociation>
+<bpmn:multiInstanceLoopCharacteristics />
+</bpmn:task>
+<bpmn:endEvent id="ai_end" name="Кандидаты отправлены">
+<bpmn:incoming>F_ai_task_ai_end</bpmn:incoming>
+<bpmn:messageEventDefinition id="MED_ai_end" />
+</bpmn:endEvent>
+<bpmn:dataStoreReference id="DS_cat_ai" name="Эталонный каталог" dataStoreRef="Store_cat" />
+<bpmn:dataStoreReference id="DS_map_ai" name="Справочник сопоставлений" dataStoreRef="Store_map" />
+<bpmn:sequenceFlow id="F_ai_start_ai_task" sourceRef="ai_start" targetRef="ai_task" />
+<bpmn:sequenceFlow id="F_ai_task_ai_end" sourceRef="ai_task" targetRef="ai_end" />
+<bpmn:textAnnotation id="A_ai"><bpmn:text>Для каждой позиции без совпадения по штрихкоду сервис предлагает SKU из эталонного каталога и оценку уверенности. Использует название из старой базы и уже подтверждённые товароведом сопоставления. Решение по цене и новым SKU принимает человек.</bpmn:text></bpmn:textAnnotation>
+<bpmn:association id="As_A_ai" sourceRef="ai_task" targetRef="A_ai" />
+</bpmn:process>
+<bpmn:process id="Proc_SAP" isExecutable="false">
+<bpmn:startEvent id="sap_start" name="Данные магазина получены">
+<bpmn:outgoing>F_sap_start_sap_load</bpmn:outgoing>
+<bpmn:messageEventDefinition id="MED_sap_start" />
+</bpmn:startEvent>
+<bpmn:task id="sap_load" name="Загрузить ассортиментную матрицу и начальные остатки магазина">
+<bpmn:incoming>F_sap_start_sap_load</bpmn:incoming>
+<bpmn:outgoing>F_sap_load_sap_end</bpmn:outgoing>
+</bpmn:task>
+<bpmn:endEvent id="sap_end" name="Данные загружены">
+<bpmn:incoming>F_sap_load_sap_end</bpmn:incoming>
+<bpmn:messageEventDefinition id="MED_sap_end" />
+</bpmn:endEvent>
+<bpmn:sequenceFlow id="F_sap_start_sap_load" sourceRef="sap_start" targetRef="sap_load" />
+<bpmn:sequenceFlow id="F_sap_load_sap_end" sourceRef="sap_load" targetRef="sap_end" />
+</bpmn:process>
+<bpmndi:BPMNDiagram id="Diag"><bpmndi:BPMNPlane id="Plane" bpmnElement="Collab_Onboarding">
+<bpmndi:BPMNShape id="P_HQ_di" bpmnElement="P_HQ" isHorizontal="true"><dc:Bounds x="20" y="20" width="5010" height="450" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="P_LOG_di" bpmnElement="P_LOG" isHorizontal="true"><dc:Bounds x="20" y="490" width="5010" height="130" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="P_ST_di" bpmnElement="P_ST" isHorizontal="true"><dc:Bounds x="20" y="640" width="5010" height="440" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="P_BANK_di" bpmnElement="P_BANK" isHorizontal="true"><dc:Bounds x="20" y="1100" width="5010" height="60" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="P_CL_di" bpmnElement="P_CL" isHorizontal="true"><dc:Bounds x="20" y="1180" width="5010" height="570" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="P_AI_di" bpmnElement="P_AI" isHorizontal="true"><dc:Bounds x="20" y="1770" width="5010" height="220" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="P_SAP_di" bpmnElement="P_SAP" isHorizontal="true"><dc:Bounds x="20" y="2010" width="5010" height="140" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="L_MA_di" bpmnElement="L_MA" isHorizontal="true"><dc:Bounds x="50" y="20" width="4980" height="150" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="L_TOV_di" bpmnElement="L_TOV" isHorizontal="true"><dc:Bounds x="50" y="170" width="4980" height="300" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="L_STAFF_di" bpmnElement="L_STAFF" isHorizontal="true"><dc:Bounds x="50" y="640" width="4980" height="280" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="L_TERM_di" bpmnElement="L_TERM" isHorizontal="true"><dc:Bounds x="50" y="920" width="4980" height="160" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="L_DEV_di" bpmnElement="L_DEV" isHorizontal="true"><dc:Bounds x="50" y="1180" width="4980" height="150" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="L_ONB_di" bpmnElement="L_ONB" isHorizontal="true"><dc:Bounds x="50" y="1330" width="4980" height="420" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="ma_start_di" bpmnElement="ma_start"><dc:Bounds x="92" y="77" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="60" y="117" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="ma_register_di" bpmnElement="ma_register"><dc:Bounds x="160" y="55" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="ma_wait_di" bpmnElement="ma_wait"><dc:Bounds x="4692" y="77" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="4660" y="33" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="ma_kpi_di" bpmnElement="ma_kpi"><dc:Bounds x="4770" y="55" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="ma_end_di" bpmnElement="ma_end"><dc:Bounds x="4952" y="77" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="4920" y="117" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="hq_start_di" bpmnElement="hq_start"><dc:Bounds x="2182" y="312" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2150" y="268" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="hq_sub_di" bpmnElement="hq_sub" isExpanded="true"><dc:Bounds x="2260" y="180" width="620" height="280" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sp_start_di" bpmnElement="sp_start"><dc:Bounds x="2282" y="312" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2266" y="352" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sp_gw_di" bpmnElement="sp_gw"><dc:Bounds x="2365" y="305" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="2262" y="272" width="90" height="34" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sp_ok_di" bpmnElement="sp_ok"><dc:Bounds x="2490" y="215" width="140" height="70" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sp_link_di" bpmnElement="sp_link"><dc:Bounds x="2490" y="295" width="140" height="70" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sp_new_di" bpmnElement="sp_new"><dc:Bounds x="2490" y="375" width="140" height="70" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sp_merge_di" bpmnElement="sp_merge"><dc:Bounds x="2705" y="305" width="50" height="50" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sp_end_di" bpmnElement="sp_end"><dc:Bounds x="2802" y="312" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="2770" y="352" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="hq_check_di" bpmnElement="hq_check"><dc:Bounds x="2890" y="290" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="hq_end_di" bpmnElement="hq_end"><dc:Bounds x="3062" y="312" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="3030" y="268" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="lg_start_di" bpmnElement="lg_start"><dc:Bounds x="402" y="537" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="370" y="577" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="lg_task_di" bpmnElement="lg_task"><dc:Bounds x="470" y="515" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="lg_end_di" bpmnElement="lg_end"><dc:Bounds x="642" y="537" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="610" y="493" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_start_di" bpmnElement="st_start"><dc:Bounds x="422" y="692" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="390" y="732" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_dump_di" bpmnElement="st_dump"><dc:Bounds x="510" y="670" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_kit_di" bpmnElement="st_kit"><dc:Bounds x="702" y="692" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="670" y="732" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_split_di" bpmnElement="st_split"><dc:Bounds x="775" y="685" width="50" height="50" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_prep_di" bpmnElement="st_prep"><dc:Bounds x="840" y="670" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_scan_di" bpmnElement="st_scan"><dc:Bounds x="1000" y="670" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_send_di" bpmnElement="st_send"><dc:Bounds x="1202" y="692" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1170" y="648" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_connect_di" bpmnElement="st_connect"><dc:Bounds x="840" y="810" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_join_di" bpmnElement="st_join"><dc:Bounds x="1825" y="685" width="50" height="50" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_wait_di" bpmnElement="st_wait"><dc:Bounds x="4082" y="692" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="4050" y="648" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_merge_di" bpmnElement="st_merge"><dc:Bounds x="4150" y="685" width="50" height="50" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_pilot_di" bpmnElement="st_pilot"><dc:Bounds x="4220" y="670" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_gw_di" bpmnElement="st_gw"><dc:Bounds x="4405" y="685" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="4360" y="648" width="140" height="34" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_fix_di" bpmnElement="st_fix"><dc:Bounds x="4360" y="810" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_open_di" bpmnElement="st_open"><dc:Bounds x="4500" y="670" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="st_end_di" bpmnElement="st_end"><dc:Bounds x="4692" y="692" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="4660" y="732" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="tm_req_di" bpmnElement="tm_req"><dc:Bounds x="990" y="960" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="tm_wait_di" bpmnElement="tm_wait"><dc:Bounds x="1502" y="982" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1470" y="938" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="tm_test_di" bpmnElement="tm_test"><dc:Bounds x="1590" y="960" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_dev_wait_di" bpmnElement="cl_dev_wait"><dc:Bounds x="1062" y="1237" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1030" y="1277" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_dev_act_di" bpmnElement="cl_dev_act"><dc:Bounds x="1310" y="1215" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_dev_send_di" bpmnElement="cl_dev_send"><dc:Bounds x="1502" y="1237" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1470" y="1277" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_start_di" bpmnElement="cl_start"><dc:Bounds x="162" y="1522" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="130" y="1562" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_profile_di" bpmnElement="cl_profile"><dc:Bounds x="240" y="1500" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_split1_di" bpmnElement="cl_split1"><dc:Bounds x="435" y="1515" width="50" height="50" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_split2_di" bpmnElement="cl_split2"><dc:Bounds x="515" y="1515" width="50" height="50" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_dump_wait_di" bpmnElement="cl_dump_wait"><dc:Bounds x="622" y="1522" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="544" y="1560" width="90" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_match_di" bpmnElement="cl_match"><dc:Bounds x="710" y="1500" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_gw1_di" bpmnElement="cl_gw1"><dc:Bounds x="905" y="1515" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="860" y="1478" width="140" height="34" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_ai_send_di" bpmnElement="cl_ai_send"><dc:Bounds x="990" y="1640" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_ai_wait_di" bpmnElement="cl_ai_wait"><dc:Bounds x="1382" y="1662" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1350" y="1618" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_m1_di" bpmnElement="cl_m1"><dc:Bounds x="1675" y="1515" width="50" height="50" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_inv_wait_di" bpmnElement="cl_inv_wait"><dc:Bounds x="1202" y="1382" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1170" y="1422" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_join1_di" bpmnElement="cl_join1"><dc:Bounds x="1825" y="1515" width="50" height="50" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_route_di" bpmnElement="cl_route"><dc:Bounds x="1930" y="1500" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_hq_send_di" bpmnElement="cl_hq_send"><dc:Bounds x="2090" y="1500" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_hq_wait_di" bpmnElement="cl_hq_wait"><dc:Bounds x="3062" y="1522" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="3030" y="1562" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_learn_di" bpmnElement="cl_learn"><dc:Bounds x="3150" y="1500" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_sap_send_di" bpmnElement="cl_sap_send"><dc:Bounds x="3310" y="1500" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_sap_wait_di" bpmnElement="cl_sap_wait"><dc:Bounds x="3682" y="1522" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="3650" y="1478" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_join_f_di" bpmnElement="cl_join_f"><dc:Bounds x="3795" y="1515" width="50" height="50" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_publish_di" bpmnElement="cl_publish"><dc:Bounds x="3890" y="1500" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="cl_end_di" bpmnElement="cl_end"><dc:Bounds x="4082" y="1522" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="4050" y="1562" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="ai_start_di" bpmnElement="ai_start"><dc:Bounds x="1082" y="1812" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1050" y="1852" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="ai_task_di" bpmnElement="ai_task"><dc:Bounds x="1160" y="1790" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="ai_end_di" bpmnElement="ai_end"><dc:Bounds x="1382" y="1812" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="1350" y="1852" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sap_start_di" bpmnElement="sap_start"><dc:Bounds x="3402" y="2062" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="3370" y="2102" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sap_load_di" bpmnElement="sap_load"><dc:Bounds x="3490" y="2040" width="140" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="sap_end_di" bpmnElement="sap_end"><dc:Bounds x="3682" y="2062" width="36" height="36" /><bpmndi:BPMNLabel><dc:Bounds x="3650" y="2102" width="100" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="DO_dump_di" bpmnElement="DO_dump"><dc:Bounds x="622" y="1650" width="36" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="585" y="1704" width="110" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="DS_cat_di" bpmnElement="DS_cat"><dc:Bounds x="812" y="1650" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="782" y="1704" width="110" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="DO_scan_di" bpmnElement="DO_scan"><dc:Bounds x="1990" y="1410" width="36" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1880" y="1412" width="105" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="DS_map_di" bpmnElement="DS_map"><dc:Bounds x="3195" y="1650" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="3165" y="1704" width="110" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="DS_cat_ai_di" bpmnElement="DS_cat_ai"><dc:Bounds x="1140" y="1905" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1110" y="1959" width="110" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="DS_map_ai_di" bpmnElement="DS_map_ai"><dc:Bounds x="1260" y="1905" width="50" height="50" /><bpmndi:BPMNLabel><dc:Bounds x="1230" y="1959" width="110" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="A_time_di" bpmnElement="A_time"><dc:Bounds x="320" y="195" width="1200" height="60" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="A_tsd_di" bpmnElement="A_tsd"><dc:Bounds x="720" y="530" width="520" height="45" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="A_dump_di" bpmnElement="A_dump"><dc:Bounds x="300" y="800" width="320" height="75" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="A_scan_di" bpmnElement="A_scan"><dc:Bounds x="1260" y="790" width="540" height="75" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="A_match_di" bpmnElement="A_match"><dc:Bounds x="1760" y="1625" width="640" height="95" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="A_learn_di" bpmnElement="A_learn"><dc:Bounds x="2620" y="1625" width="520" height="60" /></bpmndi:BPMNShape>
+<bpmndi:BPMNShape id="A_ai_di" bpmnElement="A_ai"><dc:Bounds x="1500" y="1815" width="560" height="80" /></bpmndi:BPMNShape>
+<bpmndi:BPMNEdge id="F_ma_start_ma_register_di" bpmnElement="F_ma_start_ma_register"><di:waypoint x="128" y="95" /><di:waypoint x="160" y="95" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_ma_register_ma_wait_di" bpmnElement="F_ma_register_ma_wait"><di:waypoint x="300" y="95" /><di:waypoint x="4692" y="95" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_ma_wait_ma_kpi_di" bpmnElement="F_ma_wait_ma_kpi"><di:waypoint x="4728" y="95" /><di:waypoint x="4770" y="95" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_ma_kpi_ma_end_di" bpmnElement="F_ma_kpi_ma_end"><di:waypoint x="4910" y="95" /><di:waypoint x="4952" y="95" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_hq_start_hq_sub_di" bpmnElement="F_hq_start_hq_sub"><di:waypoint x="2218" y="330" /><di:waypoint x="2239" y="330" /><di:waypoint x="2239" y="320" /><di:waypoint x="2260" y="320" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_hq_sub_hq_check_di" bpmnElement="F_hq_sub_hq_check"><di:waypoint x="2880" y="320" /><di:waypoint x="2885" y="320" /><di:waypoint x="2885" y="330" /><di:waypoint x="2890" y="330" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_hq_check_hq_end_di" bpmnElement="F_hq_check_hq_end"><di:waypoint x="3030" y="330" /><di:waypoint x="3062" y="330" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sp_start_sp_gw_di" bpmnElement="F_sp_start_sp_gw"><di:waypoint x="2318" y="330" /><di:waypoint x="2365" y="330" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sp_gw_sp_ok_di" bpmnElement="F_sp_gw_sp_ok"><di:waypoint x="2390" y="305" /><di:waypoint x="2390" y="250" /><di:waypoint x="2490" y="250" /><bpmndi:BPMNLabel><dc:Bounds x="2400" y="226" width="90" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sp_gw_sp_link_di" bpmnElement="F_sp_gw_sp_link"><di:waypoint x="2415" y="330" /><di:waypoint x="2490" y="330" /><bpmndi:BPMNLabel><dc:Bounds x="2412" y="306" width="90" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sp_gw_sp_new_di" bpmnElement="F_sp_gw_sp_new"><di:waypoint x="2390" y="355" /><di:waypoint x="2390" y="410" /><di:waypoint x="2490" y="410" /><bpmndi:BPMNLabel><dc:Bounds x="2398" y="414" width="90" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sp_ok_sp_merge_di" bpmnElement="F_sp_ok_sp_merge"><di:waypoint x="2630" y="250" /><di:waypoint x="2730" y="250" /><di:waypoint x="2730" y="305" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sp_link_sp_merge_di" bpmnElement="F_sp_link_sp_merge"><di:waypoint x="2630" y="330" /><di:waypoint x="2705" y="330" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sp_new_sp_merge_di" bpmnElement="F_sp_new_sp_merge"><di:waypoint x="2630" y="410" /><di:waypoint x="2730" y="410" /><di:waypoint x="2730" y="355" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sp_merge_sp_end_di" bpmnElement="F_sp_merge_sp_end"><di:waypoint x="2755" y="330" /><di:waypoint x="2802" y="330" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_lg_start_lg_task_di" bpmnElement="F_lg_start_lg_task"><di:waypoint x="438" y="555" /><di:waypoint x="470" y="555" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_lg_task_lg_end_di" bpmnElement="F_lg_task_lg_end"><di:waypoint x="610" y="555" /><di:waypoint x="642" y="555" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_start_st_dump_di" bpmnElement="F_st_start_st_dump"><di:waypoint x="458" y="710" /><di:waypoint x="510" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_dump_st_kit_di" bpmnElement="F_st_dump_st_kit"><di:waypoint x="650" y="710" /><di:waypoint x="702" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_kit_st_split_di" bpmnElement="F_st_kit_st_split"><di:waypoint x="738" y="710" /><di:waypoint x="775" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_split_st_prep_di" bpmnElement="F_st_split_st_prep"><di:waypoint x="825" y="710" /><di:waypoint x="840" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_split_st_connect_di" bpmnElement="F_st_split_st_connect"><di:waypoint x="800" y="735" /><di:waypoint x="800" y="850" /><di:waypoint x="840" y="850" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_prep_st_scan_di" bpmnElement="F_st_prep_st_scan"><di:waypoint x="980" y="710" /><di:waypoint x="1000" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_scan_st_send_di" bpmnElement="F_st_scan_st_send"><di:waypoint x="1140" y="710" /><di:waypoint x="1202" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_send_st_join_di" bpmnElement="F_st_send_st_join"><di:waypoint x="1238" y="710" /><di:waypoint x="1825" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_connect_tm_req_di" bpmnElement="F_st_connect_tm_req"><di:waypoint x="910" y="890" /><di:waypoint x="910" y="1000" /><di:waypoint x="990" y="1000" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_tm_req_tm_wait_di" bpmnElement="F_tm_req_tm_wait"><di:waypoint x="1130" y="1000" /><di:waypoint x="1502" y="1000" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_tm_wait_tm_test_di" bpmnElement="F_tm_wait_tm_test"><di:waypoint x="1538" y="1000" /><di:waypoint x="1590" y="1000" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_tm_test_st_join_di" bpmnElement="F_tm_test_st_join"><di:waypoint x="1730" y="1000" /><di:waypoint x="1850" y="1000" /><di:waypoint x="1850" y="735" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_join_st_wait_di" bpmnElement="F_st_join_st_wait"><di:waypoint x="1875" y="710" /><di:waypoint x="4082" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_wait_st_merge_di" bpmnElement="F_st_wait_st_merge"><di:waypoint x="4118" y="710" /><di:waypoint x="4150" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_merge_st_pilot_di" bpmnElement="F_st_merge_st_pilot"><di:waypoint x="4200" y="710" /><di:waypoint x="4220" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_pilot_st_gw_di" bpmnElement="F_st_pilot_st_gw"><di:waypoint x="4360" y="710" /><di:waypoint x="4405" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_gw_st_open_di" bpmnElement="F_st_gw_st_open"><di:waypoint x="4455" y="710" /><di:waypoint x="4500" y="710" /><bpmndi:BPMNLabel><dc:Bounds x="4440" y="666" width="90" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_gw_st_fix_di" bpmnElement="F_st_gw_st_fix"><di:waypoint x="4430" y="735" /><di:waypoint x="4430" y="810" /><bpmndi:BPMNLabel><dc:Bounds x="4436" y="739" width="90" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_fix_st_merge_di" bpmnElement="F_st_fix_st_merge"><di:waypoint x="4360" y="850" /><di:waypoint x="4175" y="850" /><di:waypoint x="4175" y="735" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_st_open_st_end_di" bpmnElement="F_st_open_st_end"><di:waypoint x="4640" y="710" /><di:waypoint x="4692" y="710" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_dev_wait_cl_dev_act_di" bpmnElement="F_cl_dev_wait_cl_dev_act"><di:waypoint x="1098" y="1255" /><di:waypoint x="1310" y="1255" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_dev_act_cl_dev_send_di" bpmnElement="F_cl_dev_act_cl_dev_send"><di:waypoint x="1450" y="1255" /><di:waypoint x="1502" y="1255" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_dev_send_cl_join_f_di" bpmnElement="F_cl_dev_send_cl_join_f"><di:waypoint x="1538" y="1255" /><di:waypoint x="3820" y="1255" /><di:waypoint x="3820" y="1515" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_start_cl_profile_di" bpmnElement="F_cl_start_cl_profile"><di:waypoint x="198" y="1540" /><di:waypoint x="240" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_profile_cl_split1_di" bpmnElement="F_cl_profile_cl_split1"><di:waypoint x="380" y="1540" /><di:waypoint x="435" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_split1_cl_dev_wait_di" bpmnElement="F_cl_split1_cl_dev_wait"><di:waypoint x="460" y="1515" /><di:waypoint x="460" y="1255" /><di:waypoint x="1062" y="1255" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_split1_cl_split2_di" bpmnElement="F_cl_split1_cl_split2"><di:waypoint x="485" y="1540" /><di:waypoint x="515" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_split2_cl_inv_wait_di" bpmnElement="F_cl_split2_cl_inv_wait"><di:waypoint x="540" y="1515" /><di:waypoint x="540" y="1400" /><di:waypoint x="1202" y="1400" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_split2_cl_dump_wait_di" bpmnElement="F_cl_split2_cl_dump_wait"><di:waypoint x="565" y="1540" /><di:waypoint x="622" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_dump_wait_cl_match_di" bpmnElement="F_cl_dump_wait_cl_match"><di:waypoint x="658" y="1540" /><di:waypoint x="710" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_match_cl_gw1_di" bpmnElement="F_cl_match_cl_gw1"><di:waypoint x="850" y="1540" /><di:waypoint x="905" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_gw1_cl_m1_di" bpmnElement="F_cl_gw1_cl_m1"><di:waypoint x="955" y="1540" /><di:waypoint x="1675" y="1540" /><bpmndi:BPMNLabel><dc:Bounds x="961" y="1544" width="90" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_gw1_cl_ai_send_di" bpmnElement="F_cl_gw1_cl_ai_send"><di:waypoint x="930" y="1565" /><di:waypoint x="930" y="1680" /><di:waypoint x="990" y="1680" /><bpmndi:BPMNLabel><dc:Bounds x="936" y="1569" width="90" height="28" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_ai_send_cl_ai_wait_di" bpmnElement="F_cl_ai_send_cl_ai_wait"><di:waypoint x="1130" y="1680" /><di:waypoint x="1382" y="1680" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_ai_wait_cl_m1_di" bpmnElement="F_cl_ai_wait_cl_m1"><di:waypoint x="1418" y="1680" /><di:waypoint x="1700" y="1680" /><di:waypoint x="1700" y="1565" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_m1_cl_join1_di" bpmnElement="F_cl_m1_cl_join1"><di:waypoint x="1725" y="1540" /><di:waypoint x="1825" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_inv_wait_cl_join1_di" bpmnElement="F_cl_inv_wait_cl_join1"><di:waypoint x="1238" y="1400" /><di:waypoint x="1850" y="1400" /><di:waypoint x="1850" y="1515" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_join1_cl_route_di" bpmnElement="F_cl_join1_cl_route"><di:waypoint x="1875" y="1540" /><di:waypoint x="1930" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_route_cl_hq_send_di" bpmnElement="F_cl_route_cl_hq_send"><di:waypoint x="2070" y="1540" /><di:waypoint x="2090" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_hq_send_cl_hq_wait_di" bpmnElement="F_cl_hq_send_cl_hq_wait"><di:waypoint x="2230" y="1540" /><di:waypoint x="3062" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_hq_wait_cl_learn_di" bpmnElement="F_cl_hq_wait_cl_learn"><di:waypoint x="3098" y="1540" /><di:waypoint x="3150" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_learn_cl_sap_send_di" bpmnElement="F_cl_learn_cl_sap_send"><di:waypoint x="3290" y="1540" /><di:waypoint x="3310" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_sap_send_cl_sap_wait_di" bpmnElement="F_cl_sap_send_cl_sap_wait"><di:waypoint x="3450" y="1540" /><di:waypoint x="3682" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_sap_wait_cl_join_f_di" bpmnElement="F_cl_sap_wait_cl_join_f"><di:waypoint x="3718" y="1540" /><di:waypoint x="3795" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_join_f_cl_publish_di" bpmnElement="F_cl_join_f_cl_publish"><di:waypoint x="3845" y="1540" /><di:waypoint x="3890" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_cl_publish_cl_end_di" bpmnElement="F_cl_publish_cl_end"><di:waypoint x="4030" y="1540" /><di:waypoint x="4082" y="1540" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_ai_start_ai_task_di" bpmnElement="F_ai_start_ai_task"><di:waypoint x="1118" y="1830" /><di:waypoint x="1160" y="1830" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_ai_task_ai_end_di" bpmnElement="F_ai_task_ai_end"><di:waypoint x="1300" y="1830" /><di:waypoint x="1382" y="1830" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sap_start_sap_load_di" bpmnElement="F_sap_start_sap_load"><di:waypoint x="3438" y="2080" /><di:waypoint x="3490" y="2080" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="F_sap_load_sap_end_di" bpmnElement="F_sap_load_sap_end"><di:waypoint x="3630" y="2080" /><di:waypoint x="3682" y="2080" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_reg_cl_di" bpmnElement="MF_reg_cl"><di:waypoint x="180" y="135" /><di:waypoint x="180" y="1522" /><bpmndi:BPMNLabel><dc:Bounds x="186" y="1000" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_reg_lg_di" bpmnElement="MF_reg_lg"><di:waypoint x="230" y="135" /><di:waypoint x="230" y="480" /><di:waypoint x="420" y="480" /><di:waypoint x="420" y="537" /><bpmndi:BPMNLabel><dc:Bounds x="240" y="494" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_reg_st_di" bpmnElement="MF_reg_st"><di:waypoint x="280" y="135" /><di:waypoint x="280" y="632" /><di:waypoint x="440" y="632" /><di:waypoint x="440" y="692" /><bpmndi:BPMNLabel><dc:Bounds x="290" y="644" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_lg_st_di" bpmnElement="MF_lg_st"><di:waypoint x="660" y="573" /><di:waypoint x="660" y="630" /><di:waypoint x="720" y="630" /><di:waypoint x="720" y="692" /><bpmndi:BPMNLabel><dc:Bounds x="680" y="596" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_dump_di" bpmnElement="MF_dump"><di:waypoint x="640" y="750" /><di:waypoint x="640" y="1522" /><bpmndi:BPMNLabel><dc:Bounds x="646" y="1030" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_scan_di" bpmnElement="MF_scan"><di:waypoint x="1220" y="728" /><di:waypoint x="1220" y="1382" /><bpmndi:BPMNLabel><dc:Bounds x="1226" y="1030" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_act_di" bpmnElement="MF_act"><di:waypoint x="1080" y="1040" /><di:waypoint x="1080" y="1237" /><bpmndi:BPMNLabel><dc:Bounds x="1086" y="1165" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_cfg_di" bpmnElement="MF_cfg"><di:waypoint x="1520" y="1237" /><di:waypoint x="1520" y="1018" /><bpmndi:BPMNLabel><dc:Bounds x="1526" y="1165" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_bank1_di" bpmnElement="MF_bank1"><di:waypoint x="1640" y="1040" /><di:waypoint x="1640" y="1100" /><bpmndi:BPMNLabel><dc:Bounds x="1530" y="1045" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_bank2_di" bpmnElement="MF_bank2"><di:waypoint x="1690" y="1100" /><di:waypoint x="1690" y="1040" /><bpmndi:BPMNLabel><dc:Bounds x="1696" y="1060" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_ai1_di" bpmnElement="MF_ai1"><di:waypoint x="1100" y="1720" /><di:waypoint x="1100" y="1812" /><bpmndi:BPMNLabel><dc:Bounds x="996" y="1772" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_ai2_di" bpmnElement="MF_ai2"><di:waypoint x="1400" y="1812" /><di:waypoint x="1400" y="1698" /><bpmndi:BPMNLabel><dc:Bounds x="1410" y="1772" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_hq1_di" bpmnElement="MF_hq1"><di:waypoint x="2200" y="1500" /><di:waypoint x="2200" y="348" /><bpmndi:BPMNLabel><dc:Bounds x="2206" y="1060" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_hq2_di" bpmnElement="MF_hq2"><di:waypoint x="3080" y="348" /><di:waypoint x="3080" y="1522" /><bpmndi:BPMNLabel><dc:Bounds x="3086" y="1060" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_sap1_di" bpmnElement="MF_sap1"><di:waypoint x="3420" y="1580" /><di:waypoint x="3420" y="2062" /><bpmndi:BPMNLabel><dc:Bounds x="3426" y="1800" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_sap2_di" bpmnElement="MF_sap2"><di:waypoint x="3700" y="2062" /><di:waypoint x="3700" y="1558" /><bpmndi:BPMNLabel><dc:Bounds x="3706" y="1800" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_ready_di" bpmnElement="MF_ready"><di:waypoint x="4100" y="1522" /><di:waypoint x="4100" y="728" /><bpmndi:BPMNLabel><dc:Bounds x="4106" y="1060" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="MF_open_di" bpmnElement="MF_open"><di:waypoint x="4710" y="692" /><di:waypoint x="4710" y="113" /><bpmndi:BPMNLabel><dc:Bounds x="4716" y="400" width="110" height="40" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="DOA_dump_di" bpmnElement="DOA_dump"><di:waypoint x="640" y="1558" /><di:waypoint x="640" y="1650" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="DIA_dump_di" bpmnElement="DIA_dump"><di:waypoint x="658" y="1675" /><di:waypoint x="760" y="1675" /><di:waypoint x="760" y="1580" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="DIA_cat_di" bpmnElement="DIA_cat"><di:waypoint x="830" y="1650" /><di:waypoint x="830" y="1580" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="DOA_scan_di" bpmnElement="DOA_scan"><di:waypoint x="1220" y="1382" /><di:waypoint x="1220" y="1350" /><di:waypoint x="2008" y="1350" /><di:waypoint x="2008" y="1410" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="DIA_scan_di" bpmnElement="DIA_scan"><di:waypoint x="2008" y="1460" /><di:waypoint x="2008" y="1500" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="DOA_map_di" bpmnElement="DOA_map"><di:waypoint x="3220" y="1580" /><di:waypoint x="3220" y="1650" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="DIA_cat_ai_di" bpmnElement="DIA_cat_ai"><di:waypoint x="1165" y="1905" /><di:waypoint x="1165" y="1870" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="DIA_map_ai_di" bpmnElement="DIA_map_ai"><di:waypoint x="1285" y="1905" /><di:waypoint x="1285" y="1870" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="As_A_dump_di" bpmnElement="As_A_dump"><di:waypoint x="560" y="750" /><di:waypoint x="460" y="800" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="As_A_scan_di" bpmnElement="As_A_scan"><di:waypoint x="1070" y="750" /><di:waypoint x="1260" y="827" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="As_A_match_di" bpmnElement="As_A_match"><di:waypoint x="2000" y="1580" /><di:waypoint x="2000" y="1625" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="As_A_learn_di" bpmnElement="As_A_learn"><di:waypoint x="3180" y="1580" /><di:waypoint x="3140" y="1640" /></bpmndi:BPMNEdge>
+<bpmndi:BPMNEdge id="As_A_ai_di" bpmnElement="As_A_ai"><di:waypoint x="1300" y="1840" /><di:waypoint x="1500" y="1850" /></bpmndi:BPMNEdge>
+</bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>
